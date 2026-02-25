@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DYNAMIC PONG</title>
+    <style>
+        body { margin:0; background:#000; overflow:hidden; touch-action:none; }
+        canvas { display:block; }
+        #score { 
+            position:absolute; 
+            top: 48px; 
+            left: 50%; 
+            transform: translateX(-50%);
+            font: bold 92px system-ui; 
+            color: #aaaaaa; 
+            opacity: 0.68; 
+            pointer-events:none; 
+            z-index: 5;
+            text-shadow: 0 0 20px rgba(170,170,170,0.35);
+            letter-spacing: -4px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="c"></canvas>
+    <div id="score">0</div>
+
+    <script>
+        const canvas = document.getElementById('c');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+
+        let w, h, ball, paddle, island, score = 0, burning = 0, particles = [];
+        let islandOffset = 0, ballBlueGlow = 0, islandBaseY = 42;
+        let islandCooldown = 0;
+
+        function roundedRect(x, y, width, height, radius) {
+            ctx.beginPath();
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + width - radius, y);
+            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+            ctx.lineTo(x + width, y + height - radius);
+            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            ctx.lineTo(x + radius, y + height);
+            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+            ctx.lineTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function resize() {
+            w = canvas.width = window.innerWidth;
+            h = canvas.height = window.innerHeight;
+            
+            if (paddle) {
+                paddle.x = w / 2 - paddle.width / 2;
+                paddle.y = h - 45;
+            }
+            if (island) island.x = w / 2 - island.width / 2;
+        }
+
+        function resetBall() {
+            ball = {
+                x: w / 2,
+                y: h * 0.42,
+                vx: (Math.random() - 0.5) * 1.65,
+                vy: 1.25 + Math.random() * 0.6,
+                r: 18
+            };
+        }
+
+        function createParticles(x, y) {
+            for (let i = 0; i < 45; i++) {
+                particles.push({
+                    x: x + Math.random() * 130 - 25,
+                    y: y + 16,
+                    vx: (Math.random() - 0.5) * 7,
+                    vy: -2.8 - Math.random() * 6.5,
+                    life: 55 + Math.random() * 32,
+                    size: 3.2 + Math.random() * 4.5
+                });
+            }
+        }
+
+        function loop() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, w, h);
+
+            // движение мяча
+            ball.x += ball.vx;
+            ball.y += ball.vy;
+
+            if (ball.x - ball.r < 0 || ball.x + ball.r > w) ball.vx *= -1;
+            if (ball.y - ball.r < 0) {
+                ball.y = ball.r;
+                ball.vy *= -1;
+            }
+
+            // столкновение с платформой
+            if (ball.y + ball.r > paddle.y && 
+                ball.y - ball.r < paddle.y + paddle.height &&
+                ball.x > paddle.x && ball.x < paddle.x + paddle.width) {
+                ball.vy *= -1.005;
+                const hit = (ball.x - (paddle.x + paddle.width/2)) / (paddle.width/2);
+                ball.vx += hit * 1.2;
+            }
+
+            // столкновение с островком
+            const islandY = islandBaseY + islandOffset;
+            if (islandCooldown <= 0 &&
+                ball.y - ball.r < islandY + island.height &&
+                ball.y + ball.r > islandY &&
+                ball.x + ball.r > island.x &&
+                ball.x - ball.r < island.x + island.width &&
+                ball.vy < 0) {
+
+                ball.vy *= -1; // отскок
+                ball.vx += (Math.random() - 0.5) * 1.2;
+
+                burning = 48;
+                ballBlueGlow = 32;
+                islandOffset = -6;
+                score++;
+                scoreEl.textContent = score;
+                createParticles(island.x + island.width/2, islandY + island.height/2);
+                islandCooldown = 12;
+            }
+
+            if (ball.y > h + 100) resetBall();
+
+            islandOffset *= 0.82;
+            if (Math.abs(islandOffset) < 0.3) islandOffset = 0;
+            if (islandCooldown > 0) islandCooldown--;
+
+            // отрисовка платформы
+            ctx.fillStyle = '#fff';
+            roundedRect(paddle.x, paddle.y, paddle.width, paddle.height, paddle.radius);
+
+            // свечение островка
+            const drawY = islandBaseY + islandOffset;
+            ctx.save();
+            if (burning > 0) {
+                ctx.shadowColor = '#a0d8ff';
+                ctx.shadowBlur = 95;
+                ctx.fillStyle = 'rgba(160, 216, 255, 0.38)';
+                roundedRect(island.x - 14, drawY - 8, island.width + 28, island.height + 18, 26);
+                burning--;
+            }
+            ctx.restore();
+
+            // сам островок
+            ctx.save();
+            if (burning > 0) ctx.shadowBlur = 70;
+            ctx.fillStyle = '#fff';
+            roundedRect(island.x, drawY, island.width, island.height, 16);
+            ctx.restore();
+
+            // частицы
+            ctx.fillStyle = burning > 12 ? '#a0d8ff' : '#fff';
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.17;
+                p.life--;
+                ctx.globalAlpha = p.life / 60;
+                ctx.fillRect(p.x, p.y, p.size, p.size);
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+            ctx.globalAlpha = 1;
+
+            // мяч с эффектом свечения
+            ctx.save();
+            ctx.shadowColor = ballBlueGlow > 0 ? '#a0d8ff' : '#fff';
+            ctx.shadowBlur = ballBlueGlow > 0 ? 42 : 28;
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+            ctx.restore();
+
+            if (ballBlueGlow > 0) ballBlueGlow--;
+
+            requestAnimationFrame(loop);
+        }
+
+        function movePaddle(e) {
+            let clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            paddle.x = clientX - paddle.width/2;
+            if (paddle.x < 0) paddle.x = 0;
+            if (paddle.x > w - paddle.width) paddle.x = w - paddle.width;
+        }
+
+        canvas.addEventListener('touchstart', movePaddle, {passive: false});
+        canvas.addEventListener('touchmove', e => { e.preventDefault(); movePaddle(e); }, {passive: false});
+        canvas.addEventListener('mousemove', movePaddle);
+
+        window.addEventListener('resize', resize);
+        resize();
+
+        paddle = { width: 140, height: 16, radius: 12 };
+        island = { width: 130, height: 16 };
+
+        resetBall();
+        loop();
+
+        console.log('%cDYNAMIC PONG 5.1 — Меньшая платформа, маленький островок, корректный отскок!', 'color:#0ff;font-size:19px;font-weight:bold');
+    </script>
+</body>
+</html>
