@@ -7,19 +7,7 @@
     <style>
         body { margin:0; background:#000; overflow:hidden; touch-action:none; }
         canvas { display:block; }
-        #score { 
-            position:absolute; 
-            top: 48px; 
-            left: 50%; 
-            transform: translateX(-50%);
-            font: bold 92px system-ui; 
-            color: #aaaaaa; 
-            opacity: 0.68; 
-            pointer-events:none; 
-            z-index: 5;
-            text-shadow: 0 0 20px rgba(170,170,170,0.35);
-            letter-spacing: -4px;
-        }
+        #score { position:absolute; top:48px; left:50%; transform:translateX(-50%); font: bold 92px system-ui; color:#aaaaaa; opacity:0.68; pointer-events:none; z-index:5; text-shadow:0 0 20px rgba(170,170,170,0.35); letter-spacing:-4px; }
     </style>
 </head>
 <body>
@@ -33,180 +21,279 @@
 
         let w, h, ball, paddle, island, score = 0, burning = 0, particles = [];
         let islandOffset = 0, ballBlueGlow = 0, islandBaseY = 42;
-        let islandCooldown = 0;
+        let islandCooldown = 0, lives = 3, gameOver = false;
+        let trail = [], highScore = 0, scorePops = [], confetti = [], explosion = [];
+        let ballGlowColor = '#fff', glowTime = 0;
+        let specialMessage = '', specialTime = 0;
+
+        const colors = ['#a0d8ff','#ff80ff','#80ff80','#ffff80','#ff8080','#80ffff'];
+
+        try { highScore = parseInt(localStorage.getItem('dynamicPongHigh')) || 0; } catch(e) {}
 
         function roundedRect(x, y, width, height, radius) {
-            ctx.beginPath();
-            ctx.moveTo(x + radius, y);
-            ctx.lineTo(x + width - radius, y);
-            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-            ctx.lineTo(x + width, y + height - radius);
-            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-            ctx.lineTo(x + radius, y + height);
-            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-            ctx.lineTo(x, y + radius);
-            ctx.quadraticCurveTo(x, y, x + radius, y);
-            ctx.closePath();
-            ctx.fill();
+            ctx.beginPath(); ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + width - radius, y); ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+            ctx.lineTo(x + width, y + height - radius); ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            ctx.lineTo(x + radius, y + height); ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+            ctx.lineTo(x, y + radius); ctx.quadraticCurveTo(x, y, x + radius, y); ctx.closePath(); ctx.fill();
         }
 
         function resize() {
             w = canvas.width = window.innerWidth;
             h = canvas.height = window.innerHeight;
-            
-            if (paddle) {
-                paddle.x = w / 2 - paddle.width / 2;
-                paddle.y = h - 45;
-            }
-            if (island) island.x = w / 2 - island.width / 2;
+        }
+
+        function createObjects() {
+            paddle = { x: w/2 - 95, y: h - 45, width: 190, height: 16 };
+            island = { x: w/2 - 85, y: islandBaseY, width: 170, height: 28 };
         }
 
         function resetBall() {
-            ball = {
-                x: w / 2,
-                y: h * 0.42,
-                vx: (Math.random() - 0.5) * 1.65,
-                vy: 1.25 + Math.random() * 0.6,
-                r: 18
-            };
+            ball = { x: w/2, y: h*0.42, vx: (Math.random()-0.5)*1.65, vy: 1.25 + Math.random()*0.6, r: 18 };
+            trail = [];
         }
 
-        function createParticles(x, y) {
-            for (let i = 0; i < 45; i++) {
-                particles.push({
-                    x: x + Math.random() * 130 - 25,
-                    y: y + 16,
-                    vx: (Math.random() - 0.5) * 7,
-                    vy: -2.8 - Math.random() * 6.5,
-                    life: 55 + Math.random() * 32,
-                    size: 3.2 + Math.random() * 4.5
-                });
+        function createParticles(x, y, count, color) {
+            for (let i = 0; i < count; i++) {
+                particles.push({ x: x + Math.random()*130-25, y: y+16, vx: (Math.random()-0.5)*9, vy: -3 - Math.random()*8, life: 60, size: 4, color: color || '#fff' });
+            }
+        }
+
+        function createConfetti() {
+            for (let i = 0; i < 120; i++) {
+                confetti.push({ x: Math.random()*w, y: -20, vx: (Math.random()-0.5)*6, vy: 2 + Math.random()*7, life: 120, color: colors[Math.floor(Math.random()*colors.length)], size: 8 + Math.random()*8 });
+            }
+        }
+
+        function createExplosion(x, y) {
+            for (let i = 0; i < 90; i++) {
+                explosion.push({ x, y, vx: (Math.random()-0.5)*14, vy: (Math.random()-0.5)*14, life: 45, size: 5 + Math.random()*7 });
             }
         }
 
         function loop() {
-            ctx.fillStyle = '#000';
-            ctx.fillRect(0, 0, w, h);
+            ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
 
-            // движение мяча
-            ball.x += ball.vx;
-            ball.y += ball.vy;
+            if (!gameOver && ball) {
+                trail.push({x: ball.x, y: ball.y});
+                if (trail.length > 14) trail.shift();
 
-            if (ball.x - ball.r < 0 || ball.x + ball.r > w) ball.vx *= -1;
-            if (ball.y - ball.r < 0) {
-                ball.y = ball.r;
-                ball.vy *= -1;
+                ball.x += ball.vx; ball.y += ball.vy;
+
+                if (ball.x - ball.r < 0 || ball.x + ball.r > w) ball.vx *= -1;
+                if (ball.y - ball.r < 0) { ball.y = ball.r; ball.vy *= -1; }
+
+                if (ball.y + ball.r > paddle.y && ball.y - ball.r < paddle.y + paddle.height && ball.x > paddle.x && ball.x < paddle.x + paddle.width) {
+                    ball.vy *= -1.005;
+                    const hit = (ball.x - (paddle.x + 95)) / 95;
+                    ball.vx += hit * 1.2;
+                }
+
+                const islandY = islandBaseY + islandOffset;
+                if (islandCooldown <= 0 && ball.y - ball.r < islandY + island.height && ball.y + ball.r > islandY && ball.x + ball.r > island.x && ball.x - ball.r < island.x + island.width && ball.vy < 0) {
+                    ball.vy = -3.4 - Math.random()*1.1;
+                    ball.vx += (Math.random()-0.5)*1.4;
+                    burning = 48; ballBlueGlow = 38; islandOffset = -9.5;
+                    score++; scoreEl.textContent = score;
+                    ballGlowColor = colors[Math.floor(Math.random()*colors.length)];
+                    glowTime = 120;
+                    createParticles(island.x + 85, islandY + 15, 50, ballGlowColor);
+                    if (navigator.vibrate) navigator.vibrate([8, 4, 12]);
+
+                    if (score % 10 === 0 && score >= 10) {
+                        createConfetti();
+                        if (navigator.vibrate) navigator.vibrate([30,10,50]);
+                    }
+
+                    if ([11,111,222,404,666,777,888,999].includes(score)) {
+                        specialTime = 180;
+                        if (score === 404) specialMessage = 'NOT FOUND';
+                        if (score === 666) specialMessage = 'DEVIL MODE';
+                        if (score === 777) { score += 50; scoreEl.textContent = score; specialMessage = 'JACKPOT +50'; }
+                        if (score === 888) specialMessage = 'INFINITY';
+                        if (score === 999) specialMessage = 'GOD MODE';
+                        if (score === 11) specialMessage = 'LUCKY';
+                        if (score === 111) specialMessage = 'TRIPLE';
+                        if (score === 222) paddle.width = 280;
+                    }
+
+                    islandCooldown = 12;
+                }
+
+                if (ball.y > h + 100) {
+                    lives--;
+                    if (lives > 0) resetBall();
+                    else {
+                        gameOver = true;
+                        createExplosion(ball.x, ball.y);
+                        if (navigator.vibrate) navigator.vibrate([100,50,100,50,200]);
+                        if (score > highScore) { highScore = score; try { localStorage.setItem('dynamicPongHigh', highScore); } catch(e){} }
+                    }
+                }
+
+                islandOffset *= 0.82; if (Math.abs(islandOffset) < 0.3) islandOffset = 0;
+                if (islandCooldown > 0) islandCooldown--;
+                if (glowTime > 0) glowTime--;
+                if (specialTime > 0) specialTime--;
+                if (score === 222 && specialTime === 0) paddle.width = 190;
             }
 
-            // столкновение с платформой
-            if (ball.y + ball.r > paddle.y && 
-                ball.y - ball.r < paddle.y + paddle.height &&
-                ball.x > paddle.x && ball.x < paddle.x + paddle.width) {
-                ball.vy *= -1.005;
-                const hit = (ball.x - (paddle.x + paddle.width/2)) / (paddle.width/2);
-                ball.vx += hit * 1.2;
+            // trail
+            for (let i = 0; i < trail.length; i++) {
+                const a = (i+1)/trail.length * 0.5;
+                ctx.globalAlpha = a;
+                ctx.shadowColor = glowTime > 0 ? ballGlowColor : '#fff';
+                ctx.shadowBlur = glowTime > 0 ? 32 : 18;
+                ctx.beginPath();
+                ctx.arc(trail[i].x, trail[i].y, ball.r * (0.6 + i/trail.length*0.5), 0, Math.PI*2);
+                ctx.fillStyle = '#fff'; ctx.fill();
             }
+            ctx.globalAlpha = 1;
 
-            // столкновение с островком
-            const islandY = islandBaseY + islandOffset;
-            if (islandCooldown <= 0 &&
-                ball.y - ball.r < islandY + island.height &&
-                ball.y + ball.r > islandY &&
-                ball.x + ball.r > island.x &&
-                ball.x - ball.r < island.x + island.width &&
-                ball.vy < 0) {
-
-                ball.vy *= -1; // отскок
-                ball.vx += (Math.random() - 0.5) * 1.2;
-
-                burning = 48;
-                ballBlueGlow = 32;
-                islandOffset = -6;
-                score++;
-                scoreEl.textContent = score;
-                createParticles(island.x + island.width/2, islandY + island.height/2);
-                islandCooldown = 12;
-            }
-
-            if (ball.y > h + 100) resetBall();
-
-            islandOffset *= 0.82;
-            if (Math.abs(islandOffset) < 0.3) islandOffset = 0;
-            if (islandCooldown > 0) islandCooldown--;
-
-            // отрисовка платформы
             ctx.fillStyle = '#fff';
-            roundedRect(paddle.x, paddle.y, paddle.width, paddle.height, paddle.radius);
+            ctx.fillRect(paddle.x, paddle.y, paddle.width, paddle.height);
 
-            // свечение островка
             const drawY = islandBaseY + islandOffset;
             ctx.save();
             if (burning > 0) {
-                ctx.shadowColor = '#a0d8ff';
-                ctx.shadowBlur = 95;
-                ctx.fillStyle = 'rgba(160, 216, 255, 0.38)';
-                roundedRect(island.x - 14, drawY - 8, island.width + 28, island.height + 18, 26);
+                ctx.shadowColor = '#a0d8ff'; ctx.shadowBlur = 95;
+                ctx.fillStyle = 'rgba(160,216,255,0.38)';
+                roundedRect(island.x-14, drawY-8, island.width+28, island.height+18, 26);
                 burning--;
             }
             ctx.restore();
 
-            // сам островок
             ctx.save();
-            if (burning > 0) ctx.shadowBlur = 70;
+            if (burning > 0) { ctx.shadowColor = '#a0d8ff'; ctx.shadowBlur = 70; }
             ctx.fillStyle = '#fff';
             roundedRect(island.x, drawY, island.width, island.height, 16);
             ctx.restore();
 
-            // частицы
-            ctx.fillStyle = burning > 12 ? '#a0d8ff' : '#fff';
-            for (let i = particles.length - 1; i >= 0; i--) {
+            for (let i = particles.length-1; i >= 0; i--) {
                 const p = particles[i];
-                p.x += p.vx;
-                p.y += p.vy;
-                p.vy += 0.17;
-                p.life--;
-                ctx.globalAlpha = p.life / 60;
+                p.x += p.vx; p.y += p.vy; p.vy += 0.2; p.life--;
+                ctx.globalAlpha = p.life / 65;
+                ctx.fillStyle = p.color || '#fff';
                 ctx.fillRect(p.x, p.y, p.size, p.size);
-                if (p.life <= 0) particles.splice(i, 1);
+                if (p.life <= 0) particles.splice(i,1);
             }
             ctx.globalAlpha = 1;
 
-            // мяч с эффектом свечения
+            for (let i = confetti.length-1; i >= 0; i--) {
+                const c = confetti[i];
+                c.x += c.vx; c.y += c.vy; c.vy += 0.25; c.life--;
+                ctx.globalAlpha = c.life / 120;
+                ctx.fillStyle = c.color;
+                ctx.fillRect(c.x, c.y, c.size, c.size*0.6);
+                if (c.life <= 0) confetti.splice(i,1);
+            }
+            ctx.globalAlpha = 1;
+
+            for (let i = explosion.length-1; i >= 0; i--) {
+                const e = explosion[i];
+                e.x += e.vx; e.y += e.vy; e.vy += 0.4; e.life--;
+                ctx.globalAlpha = e.life / 45;
+                ctx.fillStyle = '#ff4080';
+                ctx.fillRect(e.x, e.y, e.size, e.size);
+                if (e.life <= 0) explosion.splice(i,1);
+            }
+            ctx.globalAlpha = 1;
+
             ctx.save();
-            ctx.shadowColor = ballBlueGlow > 0 ? '#a0d8ff' : '#fff';
-            ctx.shadowBlur = ballBlueGlow > 0 ? 42 : 28;
+            ctx.shadowColor = glowTime > 0 ? ballGlowColor : '#fff';
+            ctx.shadowBlur = glowTime > 0 ? 48 : 28;
             ctx.beginPath();
-            ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+            ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
             ctx.fillStyle = '#fff';
             ctx.fill();
             ctx.restore();
 
-            if (ballBlueGlow > 0) ballBlueGlow--;
+            for (let i = scorePops.length-1; i >= 0; i--) {
+                const p = scorePops[i];
+                p.y += p.vy; p.alpha -= 0.028;
+                ctx.globalAlpha = p.alpha;
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 28px system-ui';
+                ctx.textAlign = 'center';
+                ctx.fillText('+1', p.x, p.y);
+                if (p.alpha <= 0) scorePops.splice(i,1);
+            }
+            ctx.globalAlpha = 1;
+
+            ctx.fillStyle = '#fff';
+            for (let i = 0; i < lives; i++) ctx.fillRect(35 + i*42, 48, 32, 9);
+
+            if (specialTime > 0) {
+                ctx.fillStyle = '#ffff00';
+                ctx.font = 'bold 56px system-ui';
+                ctx.textAlign = 'center';
+                ctx.fillText(specialMessage, w/2, 180);
+            }
+
+            if (gameOver) {
+                ctx.fillStyle = 'rgba(0,0,0,0.85)';
+                ctx.fillRect(0,0,w,h);
+                ctx.fillStyle = '#fff';
+                ctx.textAlign = 'center';
+                ctx.font = 'bold 72px system-ui';
+                ctx.fillText('ИГРА ОКОНЧЕНА', w/2, h/2-110);
+                ctx.font = 'bold 42px system-ui';
+                ctx.fillText('СЧЁТ ' + score, w/2, h/2-40);
+                ctx.fillText('РЕКОРД ' + highScore, w/2, h/2+20);
+                ctx.font = 'bold 34px system-ui';
+                ctx.fillStyle = '#a0d8ff';
+                ctx.fillText('ТАПНИ ДЛЯ РЕСТАРТА', w/2, h/2+110);
+            }
 
             requestAnimationFrame(loop);
         }
 
         function movePaddle(e) {
-            let clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            paddle.x = clientX - paddle.width/2;
+            if (gameOver) return;
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            paddle.x = clientX - paddle.width / 2;
             if (paddle.x < 0) paddle.x = 0;
             if (paddle.x > w - paddle.width) paddle.x = w - paddle.width;
         }
 
-        canvas.addEventListener('touchstart', movePaddle, {passive: false});
-        canvas.addEventListener('touchmove', e => { e.preventDefault(); movePaddle(e); }, {passive: false});
-        canvas.addEventListener('mousemove', movePaddle);
+        function handleRestart() {
+            if (gameOver) {
+                score = 0; lives = 3; scoreEl.textContent = '0';
+                gameOver = false; explosion = []; confetti = [];
+                resetBall();
+                paddle.width = 190;
+            }
+        }
 
-        window.addEventListener('resize', resize);
+        // ЧИТ-КОД Ctrl + Shift + C
+        window.addEventListener('keydown', e => {
+            if (e.ctrlKey && e.shiftKey && e.key.toUpperCase() === 'C') {
+                e.preventDefault();
+                const input = prompt('СКОЛЬКО ОЧКОВ НАКРУТИТЬ?', '1000');
+                const points = parseInt(input);
+                if (!isNaN(points) && points > 0) {
+                    score += points;
+                    scoreEl.textContent = score;
+                    console.log(`%cЧИТ СРАБОТАЛ: +${points} очков`, 'color:#0f0;font-size:18px');
+                    // сразу проверяем пасхалки и милстоуны
+                    if (score % 10 === 0 && score >= 10) createConfetti();
+                }
+            }
+        });
+
+        window.addEventListener('resize', () => { resize(); if (paddle) paddle.x = w/2 - paddle.width/2; });
         resize();
-
-        paddle = { width: 140, height: 16, radius: 12 };
-        island = { width: 130, height: 16 };
-
+        createObjects();
         resetBall();
         loop();
 
-        console.log('%cDYNAMIC PONG 5.1 — Меньшая платформа, маленький островок, корректный отскок!', 'color:#0ff;font-size:19px;font-weight:bold');
+        canvas.addEventListener('pointerdown', e => { if (gameOver) handleRestart(); else movePaddle(e); }, {passive:false});
+        canvas.addEventListener('pointermove', e => { if (!gameOver) { e.preventDefault(); movePaddle(e); }}, {passive:false});
+        canvas.addEventListener('touchstart', e => { if (gameOver) handleRestart(); else movePaddle(e); }, {passive:false});
+        canvas.addEventListener('touchmove', e => { if (!gameOver) { e.preventDefault(); movePaddle(e); }}, {passive:false});
+        canvas.addEventListener('click', handleRestart);
+
+        console.log('%cDYNAMIC PONG 7.1 — ЧИТ Ctrl+Shift+C ВПИЛЕН, НАКРУЧИВАЙ ОЧКИ КАК ХОЧЕШЬ, СУКА!', 'color:#0ff;font-size:20px;font-weight:bold');
     </script>
 </body>
 </html>
