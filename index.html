@@ -4,11 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>DYNAMIC PONG</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body { margin:0; background:#000; overflow:hidden; touch-action:none; }
         canvas { display:block; }
-        #score { position:absolute; top:48px; left:50%; transform:translateX(-50%); font: bold 92px system-ui; color:#aaaaaa; opacity:0.68; pointer-events:none; z-index:5; text-shadow:0 0 20px rgba(170,170,170,0.35); letter-spacing:-4px; }
+        #score { 
+            position:absolute; top:82px; left:50%; transform:translateX(-50%);
+            font: bold 92px system-ui; color:#aaaaaa; opacity:0.68;
+            pointer-events:none; z-index:5; text-shadow:0 0 20px rgba(170,170,170,0.35);
+            letter-spacing:-4px;
+        }
     </style>
 </head>
 <body>
@@ -19,35 +23,17 @@
         const canvas = document.getElementById('c');
         const ctx = canvas.getContext('2d');
         const scoreEl = document.getElementById('score');
-        const tg = window.Telegram ? Telegram.WebApp : null;
-
-        function tgVersionAtLeast(min) {
-            return tg && tg.version && parseFloat(tg.version) >= min;
-        }
-
-        if (tg) {
-            tg.expand();
-            tg.ready();
-            try {
-                if (tgVersionAtLeast(6.1)) {
-                    tg.setHeaderColor('#000000');
-                    tg.setBackgroundColor('#000000');
-                } else if (tg.setBackgroundColor) {
-                    tg.setBackgroundColor('#000000');
-                }
-            } catch(e) {
-                console.log('%cTG старая версия — цвета не трогаем', 'color:#ff0');
-            }
-        }
 
         let w, h, ball, paddle, island, score = 0, burning = 0, particles = [];
         let islandOffset = 0, ballBlueGlow = 0, islandBaseY = 42;
-        let islandCooldown = 0, lives = 3, gameOver = false, paused = false;
-        let trail = [], highScore = 0, topScores = [], scorePops = [], confetti = [], explosion = [];
-        let ballGlowColor = '#fff', glowTime = 0, specialMessage = '', specialTime = 0;
-        let lastTime = 0, centerTapTimes = [];
+        let islandCooldown = 0, lives = 3, gameOver = false;
+        let trail = [], highScore = 0, scorePops = [], confetti = [], explosion = [];
+        let ballGlowColor = '#fff', glowTime = 0;
+        let specialMessage = '', specialTime = 0;
 
         const colors = ['#a0d8ff','#ff80ff','#80ff80','#ffff80','#ff8080','#80ffff'];
+
+        try { highScore = parseInt(localStorage.getItem('dynamicPongHigh')) || 0; } catch(e) {}
 
         function roundedRect(x, y, width, height, radius) {
             ctx.beginPath(); ctx.moveTo(x + radius, y);
@@ -60,10 +46,12 @@
         function resize() {
             w = canvas.width = window.innerWidth;
             h = canvas.height = window.innerHeight;
+            if (paddle) paddle.x = w/2 - 77.5;
+            if (island) island.x = w/2 - 85;
         }
 
         function createObjects() {
-            paddle = { x: w/2 - 95, y: h - 45, width: 190, height: 16 };
+            paddle = { x: w/2 - 77.5, y: h - 45, width: 155, height: 16 }; // ← КОРОЧЕ ПАЛКА
             island = { x: w/2 - 85, y: islandBaseY, width: 170, height: 28 };
         }
 
@@ -90,57 +78,21 @@
             }
         }
 
-        function loadData() {
-            if (tg && tg.CloudStorage && typeof tg.CloudStorage.getItem === 'function') {
-                tg.CloudStorage.getItem('highScore', (err, val) => { if (val) highScore = parseInt(val) || 0; });
-                tg.CloudStorage.getItem('topScores', (err, val) => { if (val) topScores = JSON.parse(val) || []; });
-            } else {
-                try {
-                    highScore = parseInt(localStorage.getItem('dynamicPongHigh')) || 0;
-                    topScores = JSON.parse(localStorage.getItem('dynamicPongTop')) || [];
-                } catch(e) {}
-            }
-        }
-
-        function saveData() {
-            if (tg && tg.CloudStorage && typeof tg.CloudStorage.setItem === 'function') {
-                tg.CloudStorage.setItem('highScore', highScore);
-                tg.CloudStorage.setItem('topScores', JSON.stringify(topScores));
-            } else {
-                try {
-                    localStorage.setItem('dynamicPongHigh', highScore);
-                    localStorage.setItem('dynamicPongTop', JSON.stringify(topScores));
-                } catch(e) {}
-            }
-        }
-
-        function updateTopScores() {
-            topScores.push({score: score, date: new Date().toLocaleDateString('ru-RU')});
-            topScores.sort((a,b) => b.score - a.score);
-            topScores = topScores.slice(0, 10);
-            saveData();
-        }
-
-        function loop(timestamp) {
-            if (!lastTime) lastTime = timestamp;
-            const delta = Math.min((timestamp - lastTime) / 16.67, 2);
-            lastTime = timestamp;
-
+        function loop() {
             ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
 
-            if (!paused && !gameOver && ball) {
+            if (!gameOver && ball) {
                 trail.push({x: ball.x, y: ball.y});
                 if (trail.length > 14) trail.shift();
 
-                ball.x += ball.vx * delta;
-                ball.y += ball.vy * delta;
+                ball.x += ball.vx; ball.y += ball.vy;
 
                 if (ball.x - ball.r < 0 || ball.x + ball.r > w) ball.vx *= -1;
                 if (ball.y - ball.r < 0) { ball.y = ball.r; ball.vy *= -1; }
 
                 if (ball.y + ball.r > paddle.y && ball.y - ball.r < paddle.y + paddle.height && ball.x > paddle.x && ball.x < paddle.x + paddle.width) {
                     ball.vy *= -1.005;
-                    const hit = (ball.x - (paddle.x + 95)) / 95;
+                    const hit = (ball.x - (paddle.x + 77.5)) / 77.5;
                     ball.vx += hit * 1.2;
                 }
 
@@ -176,9 +128,8 @@
                     else {
                         gameOver = true;
                         createExplosion(ball.x, ball.y);
-                        updateTopScores();
                         if (navigator.vibrate) navigator.vibrate([100,50,100,50,200]);
-                        if (score > highScore) highScore = score;
+                        if (score > highScore) { highScore = score; try { localStorage.setItem('dynamicPongHigh', highScore); } catch(e){} }
                     }
                 }
 
@@ -186,7 +137,7 @@
                 if (islandCooldown > 0) islandCooldown--;
                 if (glowTime > 0) glowTime--;
                 if (specialTime > 0) specialTime--;
-                if (score === 222 && specialTime === 0) paddle.width = 190;
+                if (score === 222 && specialTime === 0) paddle.width = 155;
             }
 
             // trail
@@ -271,8 +222,11 @@
             }
             ctx.globalAlpha = 1;
 
+            // КОМПАКТНЫЕ ПОЛОСКИ ЖИЗНЕЙ ДЛЯ ТЕЛЕФОНА
             ctx.fillStyle = '#fff';
-            for (let i = 0; i < lives; i++) ctx.fillRect(35 + i*42, 48, 32, 9);
+            for (let i = 0; i < lives; i++) {
+                ctx.fillRect(28 + i*36, 55, 27, 9);
+            }
 
             if (specialTime > 0) {
                 ctx.fillStyle = '#ffff00';
@@ -282,73 +236,72 @@
             }
 
             if (gameOver) {
-                ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(0,0,w,h);
-                ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
-                ctx.font = 'bold 72px system-ui'; ctx.fillText('ИГРА ОКОНЧЕНА', w/2, h/2-180);
-                ctx.font = 'bold 42px system-ui'; ctx.fillText('СЧЁТ ' + score, w/2, h/2-110);
-                ctx.fillText('РЕКОРД ' + highScore, w/2, h/2-60);
-                ctx.font = 'bold 32px system-ui'; ctx.fillText('ТОП-10', w/2, h/2+10);
-                for (let i = 0; i < Math.min(10, topScores.length); i++) {
-                    ctx.fillText((i+1) + '. ' + topScores[i].score + ' (' + topScores[i].date + ')', w/2, h/2 + 50 + i*38);
-                }
-                ctx.font = 'bold 34px system-ui'; ctx.fillStyle = '#a0d8ff';
-                ctx.fillText('ТАПНИ ДЛЯ РЕСТАРТА', w/2, h*0.85);
-            }
-
-            if (paused) {
-                ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0,0,w,h);
-                ctx.fillStyle = '#fff'; ctx.font = 'bold 68px system-ui';
-                ctx.fillText('ПАУЗА', w/2, h/2);
-                ctx.font = 'bold 32px system-ui'; ctx.fillText('ТАПНИ 3 РАЗА ПО ЦЕНТРУ', w/2, h/2 + 80);
+                ctx.fillStyle = 'rgba(0,0,0,0.85)';
+                ctx.fillRect(0,0,w,h);
+                ctx.fillStyle = '#fff';
+                ctx.textAlign = 'center';
+                ctx.font = 'bold 72px system-ui';
+                ctx.fillText('ИГРА ОКОНЧЕНА', w/2, h/2-110);
+                ctx.font = 'bold 42px system-ui';
+                ctx.fillText('СЧЁТ ' + score, w/2, h/2-40);
+                ctx.fillText('РЕКОРД ' + highScore, w/2, h/2+20);
+                ctx.font = 'bold 34px system-ui';
+                ctx.fillStyle = '#a0d8ff';
+                ctx.fillText('ТАПНИ ДЛЯ РЕСТАРТА', w/2, h/2+110);
             }
 
             requestAnimationFrame(loop);
         }
 
         function movePaddle(e) {
-            if (gameOver || paused) return;
+            if (gameOver) return;
             const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            paddle.x = clientX - paddle.width / 2;
+            paddle.x = clientX - 77.5;
             if (paddle.x < 0) paddle.x = 0;
-            if (paddle.x > w - paddle.width) paddle.x = w - paddle.width;
-        }
-
-        function handleTap(e) {
-            if (gameOver) { handleRestart(); return; }
-            const cx = w / 2, cy = h / 2;
-            const tx = e.touches ? e.touches[0].clientX : e.clientX;
-            const ty = e.touches ? e.touches[0].clientY : e.clientY;
-            if (Math.hypot(tx - cx, ty - cy) < 130) {
-                centerTapTimes.push(Date.now());
-                if (centerTapTimes.length > 3) centerTapTimes.shift();
-                if (centerTapTimes.length === 3 && Date.now() - centerTapTimes[0] < 900) {
-                    paused = !paused;
-                    centerTapTimes = [];
-                }
-            } else {
-                movePaddle(e);
-            }
+            if (paddle.x > w - 155) paddle.x = w - 155;
         }
 
         function handleRestart() {
             if (gameOver) {
                 score = 0; lives = 3; scoreEl.textContent = '0';
                 gameOver = false; explosion = []; confetti = [];
-                resetBall(); paddle.width = 190;
+                resetBall();
+                paddle.width = 155;
             }
         }
 
-        loadData();
+        // ЧИТ-КОД Ctrl + Shift + C
+        window.addEventListener('keydown', e => {
+            if (e.ctrlKey && e.shiftKey && e.key.toUpperCase() === 'C') {
+                e.preventDefault();
+                const input = prompt('СКОЛЬКО ОЧКОВ НАКРУТИТЬ?', '1000');
+                const points = parseInt(input);
+                if (!isNaN(points) && points > 0) {
+                    score += points;
+                    scoreEl.textContent = score;
+                    console.log(`%cЧИТ СРАБОТАЛ: +${points} очков`, 'color:#0f0;font-size:18px');
+                    if (score % 10 === 0 && score >= 10) createConfetti();
+                }
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            resize();
+            if (paddle) paddle.x = w/2 - 77.5;
+        });
+
         resize();
         createObjects();
         resetBall();
-        requestAnimationFrame(loop);
+        loop();
 
-        canvas.addEventListener('pointerdown', handleTap, {passive:false});
-        canvas.addEventListener('touchstart', handleTap, {passive:false});
+        canvas.addEventListener('pointerdown', e => { if (gameOver) handleRestart(); else movePaddle(e); }, {passive:false});
+        canvas.addEventListener('pointermove', e => { if (!gameOver) { e.preventDefault(); movePaddle(e); }}, {passive:false});
+        canvas.addEventListener('touchstart', e => { if (gameOver) handleRestart(); else movePaddle(e); }, {passive:false});
+        canvas.addEventListener('touchmove', e => { if (!gameOver) { e.preventDefault(); movePaddle(e); }}, {passive:false});
         canvas.addEventListener('click', handleRestart);
 
-        console.log('%cDYNAMIC PONG 8.2 — TG 6.0 ПОЛНОСТЬЮ ЗАФИКСЕН, НИ ОДНОЙ ОШИБКИ, ВСЁ РАБОТАЕТ', 'color:#0ff;font-size:21px;font-weight:bold');
+        console.log('%cDYNAMIC PONG 7.2 — ПАЛКА КОРОЧЕ, HP КОМПАКТНЫЕ, СЧЁТ НИЖЕ, ВСЁ ПОД ТЕЛЕФОН, СУКА КРАСИВО!', 'color:#0ff;font-size:20px;font-weight:bold');
     </script>
 </body>
 </html>
